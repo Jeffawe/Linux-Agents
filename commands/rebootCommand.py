@@ -29,11 +29,15 @@ class RebootCommand(Command):
         await asyncio.sleep(REBOOT_DELAY_SECONDS)
 
         try:
-            proc = await asyncio.create_subprocess_exec("systemctl", "reboot")
-            await proc.wait()
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "reboot",
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
 
             if proc.returncode != 0:
-                raise RuntimeError(f"systemctl reboot exited with code {proc.returncode}")
+                detail = stderr.decode().strip() or f"exit code {proc.returncode}"
+                raise RuntimeError(f"systemctl reboot failed: {detail}")
         except (FileNotFoundError, RuntimeError) as e:
             self.bus.publish("Notify", {
                 "channel": "telegram",
