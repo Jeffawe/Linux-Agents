@@ -1,0 +1,21 @@
+[Unit]
+Description=Linux Agents (event bus / battery + Telegram notifier)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=serveruser
+Group=serveruser
+WorkingDirectory=/opt/linux-agents
+ExecStart=/opt/linux-agents/.venv/bin/python3 /opt/linux-agents/main.py
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=15
+RuntimeMaxSec=21600
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

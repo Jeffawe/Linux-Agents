@@ -19,9 +19,10 @@ class NotifyAction(Action):
             return  # No message provided, do nothing
         
         channel = context.get("channel", "telegram")  # default to telegram if not specified
+        chat_id = context.get("chat_id", None)  # Optional chat_id for the notification
 
         notifier = self.registry.get(channel)
         if not notifier:
             return  # No notifier found for the specified channel 
         else:
-            await notifier.send_message(message)
+            await notifier.send_message(message, chat_id=chat_id)

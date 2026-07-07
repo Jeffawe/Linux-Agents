@@ -8,8 +8,8 @@ class TelegramNotifier(Notifier):
         self.bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-    async def send_message(self, message):
+    async def send_message(self, message, chat_id=None):
         await self.bot.send_message(
-            chat_id=self.chat_id,
+            chat_id=chat_id or self.chat_id,
             text=message
         )

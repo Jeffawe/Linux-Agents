@@ -16,9 +16,12 @@ class CommandRule(Rule):
             return
 
         command = context["command"]
+        chat_id = context.get("chat_id", None)
 
         data = {
             "command": command,
+            "chat_id": chat_id,
+            "timestamp": context.get("timestamp", None)
         }
 
         print(f"CommandRule: Received command: {command} with data: {data}")
