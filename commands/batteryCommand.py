@@ -13,7 +13,9 @@ class BatteryCommand(Command):
 
         if not command:
             return  # No command provided, do nothing
-        
+
+        chat_id = data.get("chat_id")
+
         if self.state is None:
             return  # No state store available, do nothing
         
@@ -32,5 +34,6 @@ class BatteryCommand(Command):
 
         self.bus.publish("Notify", {
             "channel": "telegram",
+            "chat_id": chat_id,
             "message": f"Battery: {battery}% ({ac_message})"
         })
