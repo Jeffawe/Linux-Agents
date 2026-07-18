@@ -72,10 +72,12 @@ class SessionsCommand(Command):
             })
             return
 
-        # "manager" sessions are systemd's own per-user background instance,
-        # not an actual login - not useful to show here.
+        # "manager" sessions are systemd's own per-user background instance and
+        # "greeter" is GDM's own session for rendering the login screen itself -
+        # neither is an actual user login, so they're not useful to show here.
+        SKIP_CLASSES = {"manager", "greeter"}
         blocks = [
-            self._format_session(info) for info in infos if info.get("Class") != "manager"
+            self._format_session(info) for info in infos if info.get("Class") not in SKIP_CLASSES
         ]
 
         message = "\n\n".join(blocks) if blocks else "No active sessions."

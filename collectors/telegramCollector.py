@@ -53,7 +53,7 @@ class TelegramCollector(Collector):
         )
 
     async def on_command(self, update, context):
-        command = update.message.text.lstrip("/")
+        command = update.message.text.split()[0].lstrip("/").split("@")[0]
 
         if not has_permission(update.effective_user.id, command):
             await update.message.reply_text("You are not allowed to use this command.")
@@ -80,7 +80,7 @@ class TelegramCollector(Collector):
         })
 
     async def on_confirm_command(self, update, context):
-        command = update.message.text.lstrip("/").removeprefix("confirm_")
+        command = update.message.text.split()[0].lstrip("/").split("@")[0].removeprefix("confirm_")
 
         if not has_permission(update.effective_user.id, command):
             await update.message.reply_text("You are not allowed to use this command.")
