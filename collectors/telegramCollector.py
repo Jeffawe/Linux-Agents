@@ -39,6 +39,9 @@ class TelegramCollector(Collector):
         self.application.add_handler(CommandHandler("reboot", self.on_command))
         self.application.add_handler(CommandHandler("confirm_reboot", self.on_confirm_command))
 
+        self.application.add_handler(CommandHandler("rustdesk_start", self.on_command))
+        self.application.add_handler(CommandHandler("rustdesk_restart", self.on_command))
+
         self.application.add_handler(
             CommandHandler("whoami", self.on_whoami)
         )

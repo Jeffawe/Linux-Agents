@@ -18,6 +18,8 @@ ROLE_PERMISSIONS = {
         "battery",
         "sessions",
         "reboot",
+        "rustdesk_start",
+        "rustdesk_restart",
     },
     "viewer": {
         "status",

@@ -1,3 +1,4 @@
 from commands.batteryCommand import BatteryCommand
 from commands.sessionsCommand import SessionsCommand
 from commands.rebootCommand import RebootCommand
+from commands.rustdeskCommand import RustdeskCommand

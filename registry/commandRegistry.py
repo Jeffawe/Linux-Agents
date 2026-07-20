@@ -1,6 +1,6 @@
 from core import Bus, Command
 from data.stateStore import StateStore
-from commands import BatteryCommand, SessionsCommand, RebootCommand
+from commands import BatteryCommand, SessionsCommand, RebootCommand, RustdeskCommand
 
 class CommandRegistry:
     def __init__(self, bus: Bus, state: StateStore):
@@ -10,6 +10,8 @@ class CommandRegistry:
             "battery": BatteryCommand,
             "sessions": SessionsCommand,
             "reboot": RebootCommand,
+            "rustdesk_start": RustdeskCommand,
+            "rustdesk_restart": RustdeskCommand,
         }
 
     def get(self, key: str) -> Command | None:
