@@ -18,33 +18,40 @@ CONFIRM_TIMEOUT_SECONDS = 30
 # Commands listed here require /confirm_<command> before they're published.
 CONFIRMABLE_COMMANDS = {"reboot"}
 
+RECONNECT_DELAY_SECONDS = 10
+
 class TelegramCollector(Collector):
     def __init__(self, bus):
         super().__init__(bus)
 
         self.pending_confirmations = {}  # user_id -> (command, args, chat_id, requested_at)
 
-        self.application = Application.builder().token(
+        self.application = self._build_application()
+
+    def _build_application(self):
+        application = Application.builder().token(
             os.getenv("TELEGRAM_TOKEN")
         ).build()
 
-        self.application.add_handler(
+        application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_message)
         )
 
-        self.application.add_handler(CommandHandler("status", self.on_command))
-        self.application.add_handler(CommandHandler("battery", self.on_command))
-        self.application.add_handler(CommandHandler("sessions", self.on_command))
+        application.add_handler(CommandHandler("status", self.on_command))
+        application.add_handler(CommandHandler("battery", self.on_command))
+        application.add_handler(CommandHandler("sessions", self.on_command))
 
-        self.application.add_handler(CommandHandler("reboot", self.on_command))
-        self.application.add_handler(CommandHandler("confirm_reboot", self.on_confirm_command))
+        application.add_handler(CommandHandler("reboot", self.on_command))
+        application.add_handler(CommandHandler("confirm_reboot", self.on_confirm_command))
 
-        self.application.add_handler(CommandHandler("rustdesk_start", self.on_command))
-        self.application.add_handler(CommandHandler("rustdesk_restart", self.on_command))
+        application.add_handler(CommandHandler("rustdesk_start", self.on_command))
+        application.add_handler(CommandHandler("rustdesk_restart", self.on_command))
 
-        self.application.add_handler(
+        application.add_handler(
             CommandHandler("whoami", self.on_whoami)
         )
+
+        return application
 
 
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,16 +119,23 @@ class TelegramCollector(Collector):
         })
     
     async def start(self):
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-
         while self.running:
-            await asyncio.sleep(1)
+            try:
+                await self.application.initialize()
+                await self.application.start()
+                await self.application.updater.start_polling()
+            except Exception as e:
+                print(f"Error starting TelegramCollector: {e}. Retrying in {RECONNECT_DELAY_SECONDS}s")
+                self.application = self._build_application()
+                await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+                continue
 
-        await self.application.updater.stop()
-        await self.application.stop()
-        await self.application.shutdown()
+            while self.running:
+                await asyncio.sleep(1)
+
+            await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
 
     def stop(self):
         self.running = False
