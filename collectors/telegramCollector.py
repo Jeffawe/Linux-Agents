@@ -20,13 +20,26 @@ CONFIRMABLE_COMMANDS = {"reboot"}
 
 RECONNECT_DELAY_SECONDS = 10
 
+# How often to prove to ourselves that the polling connection still works.
+HEALTH_PROBE_INTERVAL_SECONDS = 60
+
+# How long probes may keep failing before the watchdog restarts the process.
+DEFAULT_HEALTH_TIMEOUT_SECONDS = 900
+
 class TelegramCollector(Collector):
     def __init__(self, bus):
         super().__init__(bus)
 
         self.pending_confirmations = {}  # user_id -> (command, args, chat_id, requested_at)
 
+        self.health_timeout_seconds = int(
+            os.getenv("TELEGRAM_HEALTH_TIMEOUT") or DEFAULT_HEALTH_TIMEOUT_SECONDS
+        )
+
         self.application = self._build_application()
+
+    def health_timeout(self):
+        return self.health_timeout_seconds
 
     def _build_application(self):
         application = Application.builder().token(
@@ -121,21 +134,53 @@ class TelegramCollector(Collector):
     async def start(self):
         while self.running:
             try:
+                # Working the reconnect path counts as alive: that loop already
+                # heals itself, so the watchdog should leave it be.
+                self.mark_healthy()
+
                 await self.application.initialize()
                 await self.application.start()
                 await self.application.updater.start_polling()
+
+                self.mark_healthy()
             except Exception as e:
                 print(f"Error starting TelegramCollector: {e}. Retrying in {RECONNECT_DELAY_SECONDS}s")
                 self.application = self._build_application()
                 await asyncio.sleep(RECONNECT_DELAY_SECONDS)
                 continue
 
-            while self.running:
-                await asyncio.sleep(1)
+            await self._poll_until_stopped()
 
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
+
+    async def _poll_until_stopped(self):
+        """Idle while the updater polls, probing the API as we go.
+
+        This is the case the 6h RuntimeMaxSec restart existed for: the updater
+        still reports itself as running while its socket quietly stops
+        delivering updates. Nothing raises, so the only way to notice is to ask
+        Telegram something ourselves and watch the answers stop coming.
+        """
+        seconds_since_probe = 0
+
+        while self.running:
+            await asyncio.sleep(1)
+            seconds_since_probe += 1
+
+            if seconds_since_probe < HEALTH_PROBE_INTERVAL_SECONDS:
+                continue
+
+            seconds_since_probe = 0
+
+            try:
+                await self.application.bot.get_me()
+                self.mark_healthy()
+            except Exception as e:
+                # Not fatal on its own - only a run of these outlasting
+                # health_timeout() stops the watchdog pings.
+                print(f"Telegram health probe failed: {e}")
 
     def stop(self):
         self.running = False

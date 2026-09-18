@@ -4,16 +4,20 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=serveruser
 Group=serveruser
 WorkingDirectory=/opt/linux-agents
+StateDirectory=linux-agents
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/linux-agents/.venv/bin/python3 /opt/linux-agents/main.py
 Restart=always
 RestartSec=5
+WatchdogSec=180
 KillSignal=SIGINT
+TimeoutStartSec=60
 TimeoutStopSec=15
-RuntimeMaxSec=21600
 StandardOutput=journal
 StandardError=journal
 

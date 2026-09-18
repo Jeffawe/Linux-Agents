@@ -12,16 +12,42 @@ systemd loads straight out of a location that account can write to is a
 privilege-escalation path (it could edit `User=` or add an `ExecStartPre=`
 and have it run as root on the next reload).
 
-`Restart=always` + `RuntimeMaxSec=21600` forces a clean restart every 6h.
-This isn't just for crashes: the Telegram long-polling connection can go
-silently dead (e.g. after the host suspends/resumes or a network blip) while
-the process itself keeps running — no exception, no exit, just a socket that
-looks `ESTAB` but never receives another update. `Restart=on-failure` alone
-won't recover from that since nothing ever "fails". The periodic restart is
-a blunt but reliable backstop; `Restart=always` is required because systemd
-does not treat `KillSignal=SIGINT` (or any clean exit) as a failure, so
-`on-failure` would silently not restart the service once `RuntimeMaxSec` (or
-graceful KillSignal restarts) stop it.
+## Liveness: watchdog, not a 6h timer
+
+The Telegram long-polling connection can go silently dead (e.g. after the host
+suspends/resumes or a network blip) while the process itself keeps running — no
+exception, no exit, just a socket that looks `ESTAB` but never receives another
+update. `Restart=on-failure` can't recover from that since nothing ever "fails".
+
+This used to be handled with `RuntimeMaxSec=21600`, a blanket restart every 6h.
+That worked, but it restarted the service 4x/day whether or not anything was
+wrong, and each restart announced itself over Telegram — the charger/startup
+message spam. It's now a real liveness check instead:
+
+- `Type=notify` + `WatchdogSec=180`: the app sends `READY=1` once collectors are
+  up, then pings `WATCHDOG=1` every 90s — but only while every collector reports
+  itself healthy (`core/watchdog.py`).
+- `TelegramCollector` calls `get_me()` every 60s while the updater is polling.
+  A run of failures outlasting `TELEGRAM_HEALTH_TIMEOUT` (default 900s) stops the
+  pings, so systemd restarts the process. Time spent in the reconnect/backoff
+  path counts as healthy — that loop already heals itself.
+- `PowerCollector` beats once per poll, so a wedged loop is caught within ~20s.
+- Health uses `time.monotonic()`, which excludes suspend, so a laptop waking from
+  sleep is not mistaken for a stall.
+
+`Restart=always` is still required: systemd does not treat `KillSignal=SIGINT`
+(or any clean exit) as a failure, so `on-failure` would silently not restart the
+service after a graceful stop.
+
+`StateDirectory=linux-agents` gives the app `/var/lib/linux-agents` (created and
+chowned by systemd, exposed as `$STATE_DIRECTORY`). It holds the clean-shutdown
+marker: an intentional stop writes it, and startup only sends a Telegram alert
+when it's missing — i.e. only when the restart was *not* asked for. Deploys and
+`systemctl restart` stay quiet; crashes and watchdog kills still notify.
+
+`Environment=PYTHONUNBUFFERED=1` matters more than it looks: without it Python
+block-buffers stdout into the journal pipe and only flushes at exit, so log lines
+appear under the timestamp of the *next* shutdown rather than when they happened.
 
 ## First-time deploy
 
@@ -44,6 +70,9 @@ graceful KillSignal restarts) stop it.
    TELEGRAM_CHAT_ID=<chat id>
    POWER_FILE_PATH=/sys/class/power_supply/BAT1/capacity   # optional, this is the default
    AC_FILE_PATH=/sys/class/power_supply/ACAD/online        # optional, this is the default
+   TELEGRAM_HEALTH_TIMEOUT=900                             # optional, seconds of failed
+                                                           # probes before the watchdog
+                                                           # restarts the service
    ```
    Lock it down:
    ```
@@ -65,7 +94,10 @@ graceful KillSignal restarts) stop it.
    ```
 
 6. Dry-run the app manually before wiring up systemd. Ctrl+C should print
-   "Shutting down..." — that confirms the graceful-shutdown path works:
+   "Shutting down..." — that confirms the graceful-shutdown path works. Outside
+   systemd there is no `$NOTIFY_SOCKET`, so it logs "No systemd watchdog
+   configured" and writes its marker to `./.state/` instead of
+   `/var/lib/linux-agents/`:
    ```
    sudo -u serveruser /opt/linux-agents/.venv/bin/python3 /opt/linux-agents/main.py
    ```

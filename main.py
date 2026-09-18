@@ -4,6 +4,7 @@ import signal
 from dotenv import load_dotenv # type: ignore
 
 from core import Bus, Collector, Action, Notifier, Rule
+from core.watchdog import notify_ready, run_watchdog
 from data.stateStore import StateStore
 from loader import load_plugins
 
@@ -19,14 +20,14 @@ async def main():
     notifiers = load_plugins("notifiers", Notifier, bus)
     rules = load_plugins("rules", Rule, bus, state_store)
 
-    running = True
+    stopping = asyncio.Event()
     tasks = []
 
     async def shutdown():
-        nonlocal running
-
         print("\nShutting down...")
 
+        # SystemStopping has a synchronous subscriber that records the clean
+        # shutdown marker, so it runs inline right here.
         bus.publish("SystemStopping", {
             "message": "Agent system shutting down..."
         })
@@ -34,10 +35,14 @@ async def main():
         for c in collectors:
             c.stop()
 
-        running = False
+        stopping.set()
 
     loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(shutdown()))
+
+    # SIGINT is what the unit sends (KillSignal); SIGTERM covers everything else,
+    # so an unhandled signal cannot skip the clean shutdown marker.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
 
     bus.publish("SystemBooting", {
         "message": "Agent system is starting..."
@@ -50,8 +55,10 @@ async def main():
         "message": "Agent system started successfully"
     })
 
-    while running:
-        await asyncio.sleep(1)
+    notify_ready()
+    tasks.append(asyncio.create_task(run_watchdog(collectors, stopping)))
+
+    await stopping.wait()
 
     await asyncio.gather(*tasks, return_exceptions=True)
 
